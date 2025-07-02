@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import tempfile
+import plotly
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
