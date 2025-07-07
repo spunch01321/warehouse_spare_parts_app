@@ -721,5 +721,16 @@ if error_file:
             err_df = pd.read_excel(error_file)
         else:
             err_df = pd.read_csv(error_file)
-        
-        error_search = st.text_input("🔍 Search error codes:", placeholder= "Enter error")
+
+        error_search = st.text_input("🔍 Search error codes:", placeholder="Enter error")
+
+        if error_search:
+            filtered_errors = err_df[
+                err_df.astype(str).apply(lambda row: error_search.lower() in row.str.lower().to_string(), axis=1)
+            ]
+            st.dataframe(filtered_errors)
+        else:
+            st.dataframe(err_df)
+
+    except Exception as e:
+        st.error(f"⚠️ Failed to load or search error file: {e}")
