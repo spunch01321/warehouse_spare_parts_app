@@ -1,13 +1,18 @@
 import streamlit as st
 import pandas as pd
 import tempfile
-import plotly
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 import base64
-from utils.bom_parser import parse_bom
-from utils.email_utils import send_email
+
+# Import your custom modules (make sure these exist)
+try:
+    from utils.bom_parser import parse_bom
+    from utils.email_utils import send_email
+except ImportError:
+    st.error("Missing required modules: utils.bom_parser and utils.email_utils")
+    st.stop()
 
 # Page configuration
 st.set_page_config(page_title="Warehouse Spare Parts", layout="wide")
@@ -32,84 +37,93 @@ with tab1:
     st.header("Parts Selection & Ordering")
     
     if bom_file:
-        bom_df = parse_bom(bom_file)
-        
-        # Enhanced parts selection with search and filters
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("Available Spare Parts")
+        try:
+            bom_df = parse_bom(bom_file)
             
-            # Search functionality
-            search_term = st.text_input("🔍 Search parts:", placeholder="Enter part number, description, or category")
+            # Enhanced parts selection with search and filters
+            col1, col2 = st.columns([2, 1])
             
-            # Filter dataframe based on search
-            if search_term:
-                filtered_df = bom_df[
-                    bom_df.apply(lambda row: search_term.lower() in str(row).lower(), axis=1)
-                ]
-            else:
-                filtered_df = bom_df
+            with col1:
+                st.subheader("Available Spare Parts")
+                
+                # Search functionality
+                search_term = st.text_input("🔍 Search parts:", placeholder="Enter part number, description, or category")
+                
+                # Filter dataframe based on search
+                if search_term:
+                    filtered_df = bom_df[
+                        bom_df.apply(lambda row: search_term.lower() in str(row).lower(), axis=1)
+                    ]
+                else:
+                    filtered_df = bom_df
+                
+                # Display parts with selection checkboxes
+                selected_parts = []
+                for idx, row in filtered_df.iterrows():
+                    col_check, col_info = st.columns([0.1, 0.9])
+                    with col_check:
+                        if st.checkbox("", key=f"part_{idx}"):
+                            selected_parts.append(row["Part Number"])
+                    with col_info:
+                        st.write(f"**{row['Part Number']}** - {row.get('Description', 'N/A')}")
+                        if 'Price' in row:
+                            st.write(f"💰 ${row['Price']:.2f}")
             
-            # Display parts with selection checkboxes
-            selected_parts = []
-            for idx, row in filtered_df.iterrows():
-                col_check, col_info = st.columns([0.1, 0.9])
-                with col_check:
-                    if st.checkbox("", key=f"part_{idx}"):
-                        selected_parts.append(row["Part Number"])
-                with col_info:
-                    st.write(f"**{row['Part Number']}** - {row.get('Description', 'N/A')}")
-                    if 'Price' in row:
-                        st.write(f"💰 ${row['Price']:.2f}")
-        
-        with col2:
-            if selected_parts:
-                st.subheader("Selected Parts Summary")
-                sel_df = bom_df[bom_df["Part Number"].isin(selected_parts)]
-                
-                # Add quantity selection for each part
-                for part in selected_parts:
-                    qty = st.number_input(
-                        f"Qty for {part}:", 
-                        min_value=1, 
-                        value=st.session_state.part_quantities.get(part, 1),
-                        key=f"qty_{part}"
-                    )
-                    st.session_state.part_quantities[part] = qty
-                
-                # Calculate total cost if price available
-                if 'Price' in sel_df.columns:
-                    total_cost = sum([
-                        sel_df[sel_df["Part Number"] == part]["Price"].iloc[0] * 
-                        st.session_state.part_quantities[part] 
-                        for part in selected_parts
-                    ])
-                    st.metric("Total Cost", f"${total_cost:.2f}")
-                
-                st.subheader("Order Submission")
-                email = st.text_input("Your email address")
-                
-                if st.button("📩 Send Order", type="primary"):
-                    # Create order summary with quantities
-                    order_data = []
+            with col2:
+                if selected_parts:
+                    st.subheader("Selected Parts Summary")
+                    sel_df = bom_df[bom_df["Part Number"].isin(selected_parts)]
+                    
+                    # Add quantity selection for each part
                     for part in selected_parts:
-                        part_info = sel_df[sel_df["Part Number"] == part].iloc[0]
-                        order_data.append({
-                            "Part Number": part,
-                            "Description": part_info.get("Description", "N/A"),
-                            "Quantity": st.session_state.part_quantities[part],
-                            "Unit Price": part_info.get("Price", 0),
-                            "Total": part_info.get("Price", 0) * st.session_state.part_quantities[part]
-                        })
+                        qty = st.number_input(
+                            f"Qty for {part}:", 
+                            min_value=1, 
+                            value=st.session_state.part_quantities.get(part, 1),
+                            key=f"qty_{part}"
+                        )
+                        st.session_state.part_quantities[part] = qty
                     
-                    order_df = pd.DataFrame(order_data)
-                    body = order_df.to_csv(index=False)
-                    send_email(to=email, subject="Spare Parts Order", body=body)
-                    st.success("📩 Order email sent!")
+                    # Calculate total cost if price available
+                    if 'Price' in sel_df.columns:
+                        total_cost = sum([
+                            sel_df[sel_df["Part Number"] == part]["Price"].iloc[0] * 
+                            st.session_state.part_quantities[part] 
+                            for part in selected_parts
+                        ])
+                        st.metric("Total Cost", f"${total_cost:.2f}")
                     
-                    # Display order summary
-                    st.dataframe(order_df)
+                    st.subheader("Order Submission")
+                    email = st.text_input("Your email address")
+                    
+                    if st.button("📩 Send Order", type="primary"):
+                        # Create order summary with quantities
+                        order_data = []
+                        for part in selected_parts:
+                            part_info = sel_df[sel_df["Part Number"] == part].iloc[0]
+                            order_data.append({
+                                "Part Number": part,
+                                "Description": part_info.get("Description", "N/A"),
+                                "Quantity": st.session_state.part_quantities[part],
+                                "Unit Price": part_info.get("Price", 0),
+                                "Total": part_info.get("Price", 0) * st.session_state.part_quantities[part]
+                            })
+                        
+                        order_df = pd.DataFrame(order_data)
+                        body = order_df.to_csv(index=False)
+                        
+                        try:
+                            send_email(to=email, subject="Spare Parts Order", body=body)
+                            st.success("📩 Order email sent!")
+                        except Exception as e:
+                            st.error(f"Error sending email: {str(e)}")
+                        
+                        # Display order summary
+                        st.dataframe(order_df)
+        except Exception as e:
+            st.error(f"Error processing BOM file: {str(e)}")
+    else:
+        st.info("📄 Upload a BOM Excel file to see available parts")
 
 with tab2:
     st.header("Assembly Visualization")
@@ -204,13 +218,15 @@ with tab2:
                     st.write(f"**Position:** ({comp_info['x']}, {comp_info['y']}, {comp_info['z']})")
                     
                     # Try to find in BOM
-                    bom_df = parse_bom(bom_file)
-                    matching_parts = bom_df[bom_df["Description"].str.contains(selected_component, case=False, na=False)]
-                    
-                    if not matching_parts.empty:
-                        st.write("**Related BOM Parts:**")
-                        st.dataframe(matching_parts)
-    
+                    try:
+                        bom_df = parse_bom(bom_file)
+                        matching_parts = bom_df[bom_df["Description"].str.contains(selected_component, case=False, na=False)]
+                        
+                        if not matching_parts.empty:
+                            st.write("**Related BOM Parts:**")
+                            st.dataframe(matching_parts)
+                    except Exception as e:
+                        st.error(f"Error processing BOM: {str(e)}")
     else:
         st.info("📄 Upload a PDF layout file to see assembly visualization")
 
@@ -218,59 +234,74 @@ with tab3:
     st.header("Quantity Management")
     
     if bom_file:
-        bom_df = parse_bom(bom_file)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📊 Inventory Overview")
+        try:
+            bom_df = parse_bom(bom_file)
             
-            # Mock inventory data (you can connect this to actual inventory system)
-            if 'Stock' not in bom_df.columns:
-                bom_df['Stock'] = [50, 25, 100, 15, 30] + [20] * (len(bom_df) - 5)
-            if 'Min_Stock' not in bom_df.columns:
-                bom_df['Min_Stock'] = [10, 5, 20, 5, 10] + [5] * (len(bom_df) - 5)
+            col1, col2 = st.columns(2)
             
-            # Stock level indicators
-            bom_df['Status'] = bom_df.apply(
-                lambda row: 'Low Stock' if row['Stock'] <= row['Min_Stock'] 
-                else 'Good' if row['Stock'] > row['Min_Stock'] * 2 
-                else 'Medium', axis=1
-            )
+            with col1:
+                st.subheader("📊 Inventory Overview")
+                
+                # Mock inventory data (you can connect this to actual inventory system)
+                if 'Stock' not in bom_df.columns:
+                    # Generate mock stock data based on dataframe length
+                    stock_values = [50, 25, 100, 15, 30]
+                    while len(stock_values) < len(bom_df):
+                        stock_values.append(20)
+                    bom_df['Stock'] = stock_values[:len(bom_df)]
+                
+                if 'Min_Stock' not in bom_df.columns:
+                    # Generate mock min stock data
+                    min_stock_values = [10, 5, 20, 5, 10]
+                    while len(min_stock_values) < len(bom_df):
+                        min_stock_values.append(5)
+                    bom_df['Min_Stock'] = min_stock_values[:len(bom_df)]
+                
+                # Stock level indicators
+                bom_df['Status'] = bom_df.apply(
+                    lambda row: 'Low Stock' if row['Stock'] <= row['Min_Stock'] 
+                    else 'Good' if row['Stock'] > row['Min_Stock'] * 2 
+                    else 'Medium', axis=1
+                )
+                
+                # Display stock chart
+                fig = px.bar(
+                    bom_df.head(10), 
+                    x='Part Number', 
+                    y='Stock',
+                    color='Status',
+                    color_discrete_map={'Low Stock': 'red', 'Medium': 'orange', 'Good': 'green'},
+                    title="Current Stock Levels"
+                )
+                fig.update_xaxis(tickangle=45)
+                st.plotly_chart(fig, use_container_width=True)
             
-            # Display stock chart
-            fig = px.bar(
-                bom_df.head(10), 
-                x='Part Number', 
-                y='Stock',
-                color='Status',
-                color_discrete_map={'Low Stock': 'red', 'Medium': 'orange', 'Good': 'green'},
-                title="Current Stock Levels"
-            )
-            fig.update_xaxis(tickangle=45)
+            with col2:
+                st.subheader("⚠️ Low Stock Alerts")
+                
+                low_stock = bom_df[bom_df['Status'] == 'Low Stock']
+                if not low_stock.empty:
+                    for _, part in low_stock.iterrows():
+                        st.error(f"**{part['Part Number']}**: {part['Stock']} units (Min: {part['Min_Stock']})")
+                else:
+                    st.success("All parts are adequately stocked!")
+            
+            st.subheader("📈 Quantity Analytics")
+            
+            # Usage trends (mock data)
+            dates = pd.date_range(start='2024-01-01', end='2024-12-31', freq='W')
+            usage_data = pd.DataFrame({
+                'Date': dates,
+                'Parts_Used': [15 + i % 10 + (i // 10) % 5 for i in range(len(dates))]
+            })
+            
+            fig = px.line(usage_data, x='Date', y='Parts_Used', title='Weekly Parts Usage Trend')
             st.plotly_chart(fig, use_container_width=True)
         
-        with col2:
-            st.subheader("⚠️ Low Stock Alerts")
-            
-            low_stock = bom_df[bom_df['Status'] == 'Low Stock']
-            if not low_stock.empty:
-                for _, part in low_stock.iterrows():
-                    st.error(f"**{part['Part Number']}**: {part['Stock']} units (Min: {part['Min_Stock']})")
-            else:
-                st.success("All parts are adequately stocked!")
-        
-        st.subheader("📈 Quantity Analytics")
-        
-        # Usage trends (mock data)
-        dates = pd.date_range(start='2024-01-01', end='2024-12-31', freq='W')
-        usage_data = pd.DataFrame({
-            'Date': dates,
-            'Parts_Used': [15 + i % 10 + (i // 10) % 5 for i in range(len(dates))]
-        })
-        
-        fig = px.line(usage_data, x='Date', y='Parts_Used', title='Weekly Parts Usage Trend')
-        st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error processing quantities: {str(e)}")
+    else:
+        st.info("📄 Upload a BOM file to see quantity management")
 
 with tab4:
     st.header("Maintenance Management")
@@ -312,7 +343,10 @@ with tab4:
                 default=["Scheduled", "In Progress"]
             )
             
-            filtered_maint = maint_df[maint_df["Status"].isin(status_filter)]
+            if status_filter:  # Only filter if user selected something
+                filtered_maint = maint_df[maint_df["Status"].isin(status_filter)]
+            else:
+                filtered_maint = maint_df
             
             # Editable maintenance table
             for idx, record in filtered_maint.iterrows():
@@ -325,18 +359,25 @@ with tab4:
                         st.write(f"📝 {record['Description']}")
                     
                     with col_status:
+                        status_options = ["Scheduled", "In Progress", "Completed", "Overdue"]
+                        current_status_idx = status_options.index(record["Status"]) if record["Status"] in status_options else 0
+                        
                         new_status = st.selectbox(
                             "Status:",
-                            ["Scheduled", "In Progress", "Completed", "Overdue"],
-                            index=["Scheduled", "In Progress", "Completed", "Overdue"].index(record["Status"]),
+                            status_options,
+                            index=current_status_idx,
                             key=f"status_{idx}"
                         )
                         if new_status != record["Status"]:
-                            st.session_state.maintenance_records[idx]["Status"] = new_status
+                            # Find the original index in the full list
+                            original_idx = maint_df.index[maint_df.index == idx].tolist()[0]
+                            st.session_state.maintenance_records[original_idx]["Status"] = new_status
                     
                     with col_actions:
                         if st.button("🗑️ Delete", key=f"del_{idx}"):
-                            st.session_state.maintenance_records.pop(idx)
+                            # Find the original index in the full list
+                            original_idx = maint_df.index[maint_df.index == idx].tolist()[0]
+                            del st.session_state.maintenance_records[original_idx]
                             st.rerun()
                     
                     st.divider()
@@ -381,12 +422,18 @@ with tab4:
 # Error codes section (moved to bottom)
 if error_file:
     st.subheader("📋 Common Error Codes")
-    err_df = (pd.read_excel(error_file) if error_file.name.endswith("xlsx") else pd.read_csv(error_file))
-    
-    # Search functionality for error codes
-    error_search = st.text_input("🔍 Search error codes:", placeholder="Enter error code or description")
-    if error_search:
-        filtered_errors = err_df[err_df.apply(lambda row: error_search.lower() in str(row).lower(), axis=1)]
-        st.dataframe(filtered_errors)
-    else:
-        st.dataframe(err_df)
+    try:
+        if error_file.name.endswith("xlsx"):
+            err_df = pd.read_excel(error_file)
+        else:
+            err_df = pd.read_csv(error_file)
+        
+        # Search functionality for error codes
+        error_search = st.text_input("🔍 Search error codes:", placeholder="Enter error code or description")
+        if error_search:
+            filtered_errors = err_df[err_df.apply(lambda row: error_search.lower() in str(row).lower(), axis=1)]
+            st.dataframe(filtered_errors)
+        else:
+            st.dataframe(err_df)
+    except Exception as e:
+        st.error(f"Error reading error codes file: {str(e)}")
