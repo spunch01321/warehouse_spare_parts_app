@@ -126,109 +126,172 @@ with tab1:
         st.info("📄 Upload a BOM Excel file to see available parts")
 
 with tab2:
-    st.header("Assembly Visualization")
+    st.header("PDF Layout Viewer")
     
     if pdf_file:
-        st.subheader("Interactive Assembly View")
+        st.subheader("📄 Assembly Layout")
         
-        # Create exploded assembly visualization
-        # This is a mock visualization - in practice, you'd need to parse the PDF
-        # and extract component positions/relationships
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Explosion factor slider
-            explosion_factor = st.slider("Assembly Explosion Factor", 0.0, 2.0, 0.0, 0.1)
+        # Add required imports at the top if not already imported
+        try:
+            import fitz  # PyMuPDF
+            from PIL import Image
+            import io
             
-            # Mock assembly data (replace with actual PDF parsing)
-            components = [
-                {"name": "Housing", "x": 0, "y": 0, "z": 0, "color": "blue"},
-                {"name": "Motor", "x": 10, "y": 5, "z": 2, "color": "red"},
-                {"name": "Bearing A", "x": -5, "y": 3, "z": 1, "color": "green"},
-                {"name": "Bearing B", "x": 15, "y": 3, "z": 1, "color": "green"},
-                {"name": "Shaft", "x": 5, "y": 0, "z": 0, "color": "gray"},
-                {"name": "Cover", "x": 0, "y": 0, "z": 10, "color": "orange"}
-            ]
+            # Convert PDF to images
+            pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
             
-            # Apply explosion effect
-            exploded_components = []
-            center_x, center_y, center_z = 5, 2.5, 2.5
+            # Display PDF pages
+            col1, col2 = st.columns([3, 1])
             
-            for comp in components:
-                # Calculate direction from center
-                dx = comp["x"] - center_x
-                dy = comp["y"] - center_y
-                dz = comp["z"] - center_z
+            with col1:
+                # Page selection
+                page_count = pdf_document.page_count
+                if page_count > 1:
+                    selected_page = st.selectbox("Select Page:", range(1, page_count + 1)) - 1
+                else:
+                    selected_page = 0
+                    st.info(f"PDF has {page_count} page(s)")
                 
-                # Apply explosion
-                exploded_x = comp["x"] + dx * explosion_factor
-                exploded_y = comp["y"] + dy * explosion_factor
-                exploded_z = comp["z"] + dz * explosion_factor
+                # Convert PDF page to image
+                page = pdf_document.load_page(selected_page)
                 
-                exploded_components.append({
-                    **comp,
-                    "exploded_x": exploded_x,
-                    "exploded_y": exploded_y,
-                    "exploded_z": exploded_z
-                })
-            
-            # Create 3D scatter plot
-            fig = go.Figure()
-            
-            for comp in exploded_components:
-                fig.add_trace(go.Scatter3d(
-                    x=[comp["exploded_x"]],
-                    y=[comp["exploded_y"]],
-                    z=[comp["exploded_z"]],
-                    mode='markers+text',
-                    marker=dict(size=15, color=comp["color"]),
-                    text=[comp["name"]],
-                    textposition="top center",
-                    name=comp["name"]
-                ))
-            
-            fig.update_layout(
-                title="Assembly Exploded View",
-                scene=dict(
-                    xaxis_title="X",
-                    yaxis_title="Y",
-                    zaxis_title="Z"
-                ),
-                height=500
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.subheader("Component Details")
-            
-            # Component selection
-            selected_component = st.selectbox(
-                "Select Component:",
-                [comp["name"] for comp in components]
-            )
-            
-            if selected_component and bom_file:
-                # Try to find matching part in BOM
-                comp_info = next((comp for comp in components if comp["name"] == selected_component), None)
-                if comp_info:
-                    st.write(f"**Component:** {selected_component}")
-                    st.write(f"**Color:** {comp_info['color']}")
-                    st.write(f"**Position:** ({comp_info['x']}, {comp_info['y']}, {comp_info['z']})")
+                # Get page dimensions and set zoom level
+                page_rect = page.rect
+                zoom = st.slider("Zoom Level", 0.5, 3.0, 1.0, 0.1)
+                
+                # Render page as image
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("png")
+                
+                # Display the PDF page
+                st.image(img_data, caption=f"Page {selected_page + 1}", use_column_width=True)
+                
+                # Add annotation capabilities
+                st.subheader("📍 Add Annotations")
+                
+                # Simple annotation form
+                with st.expander("Add Part Annotation"):
+                    ann_x = st.number_input("X Position (pixels)", min_value=0, max_value=int(page_rect.width * zoom), value=100)
+                    ann_y = st.number_input("Y Position (pixels)", min_value=0, max_value=int(page_rect.height * zoom), value=100)
+                    ann_text = st.text_input("Annotation Text:", placeholder="Enter part name or description")
+                    ann_color = st.color_picker("Annotation Color", "#FF0000")
                     
-                    # Try to find in BOM
+                    if st.button("Add Annotation") and ann_text:
+                        # Store annotation in session state
+                        if 'pdf_annotations' not in st.session_state:
+                            st.session_state.pdf_annotations = []
+                        
+                        annotation = {
+                            "page": selected_page,
+                            "x": ann_x,
+                            "y": ann_y,
+                            "text": ann_text,
+                            "color": ann_color
+                        }
+                        st.session_state.pdf_annotations.append(annotation)
+                        st.success(f"Added annotation: {ann_text}")
+                
+                # Display existing annotations for current page
+                if 'pdf_annotations' in st.session_state:
+                    current_page_annotations = [ann for ann in st.session_state.pdf_annotations if ann["page"] == selected_page]
+                    if current_page_annotations:
+                        st.subheader("📌 Current Page Annotations")
+                        for i, ann in enumerate(current_page_annotations):
+                            col_ann, col_del = st.columns([4, 1])
+                            with col_ann:
+                                st.write(f"• **{ann['text']}** at ({ann['x']}, {ann['y']})")
+                            with col_del:
+                                if st.button("🗑️", key=f"del_ann_{i}"):
+                                    st.session_state.pdf_annotations.remove(ann)
+                                    st.rerun()
+            
+            with col2:
+                st.subheader("📋 PDF Information")
+                
+                # Display PDF metadata
+                metadata = pdf_document.metadata
+                st.write(f"**Title:** {metadata.get('title', 'N/A')}")
+                st.write(f"**Author:** {metadata.get('author', 'N/A')}")
+                st.write(f"**Pages:** {page_count}")
+                st.write(f"**File size:** {len(pdf_file.getvalue()) / 1024:.1f} KB")
+                
+                # Page dimensions
+                st.write(f"**Page size:** {page_rect.width:.0f} x {page_rect.height:.0f} pts")
+                
+                # Parts mapping section
+                if bom_file:
+                    st.subheader("🔗 Link to BOM Parts")
+                    
                     try:
                         bom_df = parse_bom(bom_file)
-                        matching_parts = bom_df[bom_df["Description"].str.contains(selected_component, case=False, na=False)]
                         
-                        if not matching_parts.empty:
-                            st.write("**Related BOM Parts:**")
-                            st.dataframe(matching_parts)
+                        # Select part from BOM to link to PDF
+                        part_options = bom_df["Part Number"].tolist()
+                        selected_part = st.selectbox("Select BOM Part:", [""] + part_options)
+                        
+                        if selected_part:
+                            part_info = bom_df[bom_df["Part Number"] == selected_part].iloc[0]
+                            st.write(f"**Part:** {selected_part}")
+                            st.write(f"**Description:** {part_info.get('Description', 'N/A')}")
+                            
+                            if 'Price' in part_info:
+                                st.write(f"**Price:** ${part_info['Price']:.2f}")
+                            
+                            # Quick add to annotation
+                            if st.button("📍 Add to Current View"):
+                                if 'pdf_annotations' not in st.session_state:
+                                    st.session_state.pdf_annotations = []
+                                
+                                annotation = {
+                                    "page": selected_page,
+                                    "x": 100,
+                                    "y": 100,
+                                    "text": f"{selected_part} - {part_info.get('Description', 'N/A')}",
+                                    "color": "#FF0000"
+                                }
+                                st.session_state.pdf_annotations.append(annotation)
+                                st.success(f"Added {selected_part} to annotations")
+                                st.rerun()
+                    
                     except Exception as e:
-                        st.error(f"Error processing BOM: {str(e)}")
+                        st.error(f"Error linking to BOM: {str(e)}")
+                
+                # Export annotations
+                if 'pdf_annotations' in st.session_state and st.session_state.pdf_annotations:
+                    st.subheader("💾 Export Annotations")
+                    
+                    # Convert annotations to DataFrame
+                    ann_df = pd.DataFrame(st.session_state.pdf_annotations)
+                    
+                    # Download as CSV
+                    csv = ann_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Annotations CSV",
+                        data=csv,
+                        file_name="pdf_annotations.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Clear all annotations
+                    if st.button("🗑️ Clear All Annotations"):
+                        st.session_state.pdf_annotations = []
+                        st.rerun()
+            
+            pdf_document.close()
+        
+        except ImportError:
+            st.error("Missing required libraries. Please install: `pip install PyMuPDF pillow`")
+        except Exception as e:
+            st.error(f"Error processing PDF: {str(e)}")
+    
     else:
-        st.info("📄 Upload a PDF layout file to see assembly visualization")
+        st.info("📄 Upload a PDF layout file to view and annotate assembly drawings")
+        st.write("**Features available after upload:**")
+        st.write("• View PDF pages with zoom control")
+        st.write("• Add interactive annotations")
+        st.write("• Link BOM parts to PDF locations")
+        st.write("• Export annotations as CSV")
 
 with tab3:
     st.header("Quantity Management")
