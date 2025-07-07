@@ -722,4 +722,4 @@ if error_file:
         else:
             err_df = pd.read_csv(error_file)
         
-        error_search = st.text_input("🔍 Search error codes:", placeholder="Enter error
+        error_search = st.text_input("🔍 Search error codes:", placeholder="Enter error)
