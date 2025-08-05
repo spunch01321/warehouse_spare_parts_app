@@ -16,7 +16,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(page_title="Warehouse Spare Parts", layout="wide")
-st.title("📦 Warehouse Spare Parts Order System")
+st.title("📦 Complete Service Dashboard")
 
 # Initialize session state for quantities and maintenance data
 if 'part_quantities' not in st.session_state:
