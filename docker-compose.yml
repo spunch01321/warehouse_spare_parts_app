@@ -1,0 +1,46 @@
+version: "3.8"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wsparts
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - wsparts-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/wsparts
+      - JWT_SECRET=replace-me-with-secure-value
+      - CORS_ORIGINS=*
+    ports:
+      - "8000:8000"
+    networks:
+      - wsparts-net
+
+  client:
+    build:
+      context: .
+      dockerfile: docker/streamlit.Dockerfile
+    depends_on:
+      - backend
+    environment:
+      - API_BASE_URL=http://backend:8000
+    ports:
+      - "8501:8501"
+    networks:
+      - wsparts-net
+
+volumes:
+  db_data:
+
+networks:
+  wsparts-net:
