@@ -1,19 +1,16 @@
-# Complete Service App
+# Warehouse Service — Multi-tenant App (FastAPI + Streamlit)
+
+This repository contains a multi-tenant-ready backend (FastAPI) and a Streamlit client for viewing PDF drawings with calibrated scaling, adding annotations, and submitting "Request Service" tickets.
 
 ## Features
-- Upload PDF layout, BOM (Excel), and optional error codes.
-- Select parts interactively.
-- Send order via email.
-- Deployable via Streamlit Cloud.
+- FastAPI backend with tenant-aware SQL models (Postgres)
+- Local username/password authentication and Microsoft OAuth (placeholder integration)
+- PDF rendering via PyMuPDF for crisp images
+- Streamlit frontend for customer UI (annotations, calibration, request service)
+- Docker + docker-compose for local dev (Postgres + backend + client)
 
-## Getting Started
-```bash
-git clone https://github.com/yourusername/warehouse_spare_parts_app.git
-cd warehouse_spare_parts_app
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-## Deployment
-1. Push to GitHub.
-2. Connect the repo in Streamlit Community Cloud -> `app.py`.
+## Quick start (local)
+1. Copy `.env.example` to `.env` and fill secrets (especially `JWT_SECRET`).
+2. Build and run:
+   ```bash
+   ./start.sh
